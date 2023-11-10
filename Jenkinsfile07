@@ -1,55 +1,49 @@
-# Docker
-# Build a Docker image
-# https://docs.microsoft.com/azure/devops/pipelines/languages/docker
+  pipeline {
 
-trigger:
-- none
+    agent {
+        docker { image 'maven:3.6.3-openjdk-11-slim' }
+    }
 
-resources:
-- repo: self
+    stages {
 
-variables:
-  tag: '$(Build.BuildId)'
-  trivyVersion: 0.9.2
-  imageName: 'us-central1-docker.pkg.dev/galaxy-mario-lozano/javapp001'
+        stage('Build') {   
+            steps {
+                sh 'mvn -B verify'
+            }
 
-stages:
-- stage: Build
-  displayName: Build image
-  jobs:
-  - job: Build
-    displayName: Build
-    pool:
-      vmImage: ubuntu-latest
-    steps:
-    - task: Maven@4
-      inputs:
-        mavenPomFile: 'pom.xml'
-        publishJUnitResults: true
-        testResultsFiles: '**/surefire-reports/TEST-*.xml'
-        javaHomeOption: 'JDKVersion'
-        jdkVersionOption: '1.11'
-        mavenVersionOption: 'Default'
-        mavenAuthenticateFeed: false
-        effectivePomSkip: false
-        sonarQubeRunAnalysis: false
-    - task: Docker@2
-      inputs:
-        containerRegistry: 'gcp-at'
-        repository: 'galaxy-mario-lozano/javapp001'
-        command: 'buildAndPush'
-        Dockerfile: 'Dockerfile'
-        tags: '$(tag)'
-    - script: |
-            sudo apt-get install rpm
-            wget https://github.com/aquasecurity/trivy/releases/download/v$(trivyVersion)/trivy_$(trivyVersion)_Linux-64bit.deb
-            sudo dpkg -i trivy_$(trivyVersion)_Linux-64bit.deb
-            trivy -v
-      displayName: 'Download and install Trivy'
-
-    - task: CmdLine@2
-      displayName: "Run trivy scan"
-      inputs:
-        script: |
-            trivy image --exit-code 0 --severity LOW,MEDIUM $(imageName):$(tag)
-            trivy image --exit-code 1 --severity HIGH,CRITICAL $(imageName):$(tag)
+            post{
+                success {
+                    archiveArtifacts artifacts: 'target/*.jar', fingerprint: true, onlyIfSuccessful: true
+                }
+            }
+        }
+        stage('Dockering') {
+            agent any
+            steps {
+                script {
+                    copyArtifacts filter: 'target/*.jar',
+                                fingerprintArtifacts: true,
+                                projectName: '${JOB_NAME}',
+                                flatten: true,
+                                selector: specific('${BUILD_NUMBER}'),
+                                target: 'target';
+                    sh 'docker --version'
+                    sh 'docker-compose --version'
+                    sh 'docker-compose build'
+                }
+            }
+        }
+        stage('Tagging') {
+            environment {
+                DOCKER_CREDS = credentials('docker-credentials')
+            }
+            steps {
+                    script {
+                    sh 'docker login -u ${DOCKER_CREDS_USR} -p ${DOCKER_CREDS_PSW}'
+                    sh 'docker tag msmicroservice ${DOCKER_CREDS_USR}/msmicroservice:$BUILD_NUMBER'
+                    sh 'docker push ${DOCKER_CREDS_USR}/msmicroservice:$BUILD_NUMBER'
+                    }
+            }
+        }
+    }
+}
