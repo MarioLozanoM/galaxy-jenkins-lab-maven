@@ -11,7 +11,7 @@ resources:
 variables:
   tag: '$(Build.BuildId)'
   trivyVersion: 0.9.2
-  imageName: 'us-central1-docker.pkg.dev/gcp-artifact-aldo-trucios/javapp001'
+  imageName: 'us-central1-docker.pkg.dev/galaxy-mario-lozano/javapp001'
 
 stages:
 - stage: Build
@@ -36,7 +36,7 @@ stages:
     - task: Docker@2
       inputs:
         containerRegistry: 'gcp-at'
-        repository: 'gcp-artifact-aldo-trucios/javapp001'
+        repository: 'galaxy-mario-lozano/javapp001'
         command: 'buildAndPush'
         Dockerfile: 'Dockerfile'
         tags: '$(tag)'
